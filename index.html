@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estatística ADS - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.npmcdn.com/chart.js@4.4.1/dist/chart.umd.js"></script>
+</head>
+<body class="bg-light">
+<div class="container py-4">
+    <div class="text-center mb-4">
+        <h1 class="fw-bold text-primary">📊 Dashboard de Latência (Dados Não Agrupados)</h1>
+        <p class="text-muted">Aplicação de Medidas de Posição e Frequência</p>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <textarea id="inputDados" class="form-control mb-2" rows="2">102, 115, 98, 320, 110, 105, 108, 120, 112, 107, 450, 103, 118, 114, 109, 111, 106, 113, 117, 104, 99, 116, 121, 108, 112, 110, 105, 107, 114, 500</textarea>
+            <button onclick="gerarRelatorio()" class="btn btn-primary w-100 fw-bold">🚀 Gerar ROL e Análise Completa</button>
+        </div>
+    </div>
+
+    <div id="sessaoResultados" style="display: none;">
+        <div class="row g-3 mb-4 text-center">
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm small">Média<br><b id="resMedia"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm text-primary small">Mediana (Q2)<br><b id="resMediana"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm small">Moda<br><b id="resModa"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm small">Q1<br><b id="resQ1"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm text-danger small">P95<br><b id="resP95"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm small">Q3<br><b id="resQ3"></b></div></div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-dark text-white fw-bold small text-center">TABELA DE FREQUÊNCIA (xi, fi, fr, fac)</div>
+                    <div class="table-responsive" style="max-height: 400px;">
+                        <table class="table table-sm table-hover mb-0 text-center small">
+                            <thead class="table-light">
+                                <tr><th>xi</th><th>fi</th><th>fr (%)</th><th>fac</th></tr>
+                            </thead>
+                            <tbody id="corpoTabela"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-7">
+                <div id="resInsight" class="mb-3"></div>
+                <div class="card border-0 shadow-sm p-3" style="height: 350px;">
+                    <canvas id="meuGrafico"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let chartInstance = null;
+
+    function gerarRelatorio() {
+        const input = document.getElementById('inputDados').value;
+        let valores = input.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+        
+        if (valores.length < 30) {
+            alert("Amostra mínima de 30 elementos necessária para o trabalho da Profª Melina.");
+            return;
+        }
+
+        // 1. ROL (Ordenação Automática)
+        valores.sort((a, b) => a - b);
+        const n = valores.length;
+
+        // 2. Tendência Central
+        const media = valores.reduce((a, b) => a + b, 0) / n;
+        let mediana = n % 2 === 0 ? (valores[n/2 - 1] + valores[n/2]) / 2 : valores[Math.floor(n/2)];
+        
+        let contagem = {};
+        valores.forEach(v => contagem[v] = (contagem[v] || 0) + 1);
+        let maxFreq = Math.max(...Object.values(contagem));
+        let modas = Object.keys(contagem).filter(v => contagem[v] === maxFreq);
+        let resultadoModa = (modas.length === n || maxFreq === 1) ? "Amodal" : modas.join(', ');
+
+        // 3. Separatrizes (Fórmula: Posição = p/100 * (n+1))
+        const calcP = (p) => {
+            let pos = (p / 100) * (n + 1);
+            let i = Math.floor(pos);
+            let resto = pos - i;
+            if (valores[i - 1] !== undefined && valores[i] !== undefined) {
+                return valores[i - 1] + resto * (valores[i] - valores[i - 1]);
+            }
+            return valores[i - 1] || valores[0];
+        };
+
+        // 4. Construção da Tabela de Frequência
+        let tabelaHTML = '';
+        let acumulado = 0;
+        const chavesUnicas = Object.keys(contagem).sort((a, b) => a - b);
+        
+        chavesUnicas.forEach(xi => {
+            let fi = contagem[xi];
+            acumulado += fi;
+            let fr = (fi / n) * 100;
+            tabelaHTML += `<tr><td>${xi} ms</td><td>${fi}</td><td>${fr.toFixed(1)}%</td><td>${acumulado}</td></tr>`;
+        });
+        document.getElementById('corpoTabela').innerHTML = tabelaHTML;
+
+        // 5. Interface
+        document.getElementById('resMedia').innerText = media.toFixed(2);
+        document.getElementById('resMediana').innerText = mediana.toFixed(2);
+        document.getElementById('resModa').innerText = resultadoModa;
+        document.getElementById('resQ1').innerText = calcP(25).toFixed(2);
+        document.getElementById('resQ3').innerText = calcP(75).toFixed(2);
+        const p95 = calcP(95);
+        document.getElementById('resP95').innerText = p95.toFixed(2);
+        document.getElementById('sessaoResultados').style.display = 'block';
+
+        // 6. Insight Automático
+        const elementoInsight = document.getElementById('resInsight');
+        if (p95 > media * 1.3) {
+            elementoInsight.className = "p-3 rounded border border-danger text-danger fw-bold bg-white small";
+            elementoInsight.innerText = `⚠️ Alerta: O P95 (${p95.toFixed(2)}ms) indica instabilidade severa (Outliers). A média está distorcida em relação à mediana.`;
+        } else {
+            elementoInsight.className = "p-3 rounded border border-success text-success bg-white small";
+            elementoInsight.innerText = "✅ Estabilidade: O sistema apresenta latência consistente e previsível.";
+        }
+
+        // 7. Gráfico
+        const ctx = document.getElementById('meuGrafico').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: valores.map((_, i) => i + 1),
+                datasets: [{ 
+                    label: 'Latência no ROL (Dados Ordenados)', 
+                    data: valores, 
+                    backgroundColor: '#0d6efd' 
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estatística ADS - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-light">
+<div class="container py-4">
+    <div class="text-center mb-4">
+        <h1 class="fw-bold text-primary">📊 Dashboard de Latência (Dados Não Agrupados)</h1>
+        <p class="text-muted">Aplicação de Medidas de Posição e Frequência</p>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <textarea id="inputDados" class="form-control mb-2" rows="2">102, 115, 98, 320, 110, 105, 108, 120, 112, 107, 450, 103, 118, 114, 109, 111, 106, 113, 117, 104, 99, 116, 121, 108, 112, 110, 105, 107, 114, 500</textarea>
+            <button onclick="gerarRelatorio()" class="btn btn-primary w-100 fw-bold">🚀 Gerar ROL e Análise Completa</button>
+        </div>
+    </div>
+
+    <div id="sessaoResultados" style="display: none;">
+        <div class="row g-3 mb-4 text-center">
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm small">Média<br><b id="resMedia"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm text-primary small">Mediana (Q2)<br><b id="resMediana"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm small">Moda<br><b id="resModa"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm small">Q1<br><b id="resQ1"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm text-danger small">P95<br><b id="resP95"></b></div></div>
+            <div class="col-md-2"><div class="p-2 bg-white rounded shadow-sm small">Q3<br><b id="resQ3"></b></div></div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-dark text-white fw-bold small text-center">TABELA DE FREQUÊNCIA (xi, fi, fr, fac)</div>
+                    <div class="table-responsive" style="max-height: 400px;">
+                        <table class="table table-sm table-hover mb-0 text-center small">
+                            <thead class="table-light">
+                                <tr><th>xi</th><th>fi</th><th>fr (%)</th><th>fac</th></tr>
+                            </thead>
+                            <tbody id="corpoTabela"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-7">
+                <div id="resInsight" class="mb-3"></div>
+                <div class="card border-0 shadow-sm p-3" style="height: 350px;">
+                    <canvas id="meuGrafico"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let chartInstance = null;
+
+    function gerarRelatorio() {
+        const input = document.getElementById('inputDados').value;
+        let valores = input.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+        
+        if (valores.length < 30) {
+            alert("Amostra mínima de 30 elementos necessária para o trabalho da Profª Melina.");
+            return;
+        }
+
+        // 1. ROL (Ordenação Automática)
+        valores.sort((a, b) => a - b);
+        const n = valores.length;
+
+        // 2. Tendência Central
+        const media = valores.reduce((a, b) => a + b, 0) / n;
+        let mediana = n % 2 === 0 ? (valores[n/2 - 1] + valores[n/2]) / 2 : valores[Math.floor(n/2)];
+        
+        let contagem = {};
+        valores.forEach(v => contagem[v] = (contagem[v] || 0) + 1);
+        let maxFreq = Math.max(...Object.values(contagem));
+        let modas = Object.keys(contagem).filter(v => contagem[v] === maxFreq);
+        let resultadoModa = (modas.length === n || maxFreq === 1) ? "Amodal" : modas.join(', ');
+
+        // 3. Separatrizes (Fórmula: Posição = p/100 * (n+1))
+        const calcP = (p) => {
+            let pos = (p / 100) * (n + 1);
+            let i = Math.floor(pos);
+            let resto = pos - i;
+            if (valores[i - 1] !== undefined && valores[i] !== undefined) {
+                return valores[i - 1] + resto * (valores[i] - valores[i - 1]);
+            }
+            return valores[i - 1] || valores[0];
+        };
+
+        // 4. Construção da Tabela de Frequência
+        let tabelaHTML = '';
+        let acumulado = 0;
+        const chavesUnicas = Object.keys(contagem).sort((a, b) => a - b);
+        
+        chavesUnicas.forEach(xi => {
+            let fi = contagem[xi];
+            acumulado += fi;
+            let fr = (fi / n) * 100;
+            tabelaHTML += `<tr><td>${xi} ms</td><td>${fi}</td><td>${fr.toFixed(1)}%</td><td>${acumulado}</td></tr>`;
+        });
+        document.getElementById('corpoTabela').innerHTML = tabelaHTML;
+
+        // 5. Interface
+        document.getElementById('resMedia').innerText = media.toFixed(2);
+        document.getElementById('resMediana').innerText = mediana.toFixed(2);
+        document.getElementById('resModa').innerText = resultadoModa;
+        document.getElementById('resQ1').innerText = calcP(25).toFixed(2);
+        document.getElementById('resQ3').innerText = calcP(75).toFixed(2);
+        const p95 = calcP(95);
+        document.getElementById('resP95').innerText = p95.toFixed(2);
+        document.getElementById('sessaoResultados').style.display = 'block';
+
+        // 6. Insight Automático
+        const elementoInsight = document.getElementById('resInsight');
+        if (p95 > media * 1.3) {
+            elementoInsight.className = "p-3 rounded border border-danger text-danger fw-bold bg-white small";
+            elementoInsight.innerText = `⚠️ Alerta: O P95 (${p95.toFixed(2)}ms) indica instabilidade severa (Outliers). A média está distorcida em relação à mediana.`;
+        } else {
+            elementoInsight.className = "p-3 rounded border border-success text-success bg-white small";
+            elementoInsight.innerText = "✅ Estabilidade: O sistema apresenta latência consistente e previsível.";
+        }
+
+        // 7. Gráfico
+        const ctx = document.getElementById('meuGrafico').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: valores.map((_, i) => i + 1),
+                datasets: [{ 
+                    label: 'Latência no ROL (Dados Ordenados)', 
+                    data: valores, 
+                    backgroundColor: '#0d6efd' 
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+</script>
+</body>
+</html>
